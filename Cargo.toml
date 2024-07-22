@@ -1,0 +1,29 @@
+[package]
+name = "screeps-room-regions"
+version = "0.1.0"
+edition = "2021"
+authors = ["Joe Ciskey"]
+include = [
+    "Cargo.toml",
+    "src/**/*",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE",
+]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/jciskey/screeps-room-regions/"
+documentation = "https://docs.rs/screeps-room-regions/"
+description = "Region analysis of rooms for Screeps: World in native Rust"
+
+[lib]
+name = "screeps_room_regions"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+screeps-game-api = "0.21"
+
+[features]
+default = []

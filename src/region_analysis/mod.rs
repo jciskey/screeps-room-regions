@@ -1,5 +1,6 @@
 
-mod structs;
-mod watershed;
+/// Holds top-level structs for region analysis
+pub mod structs;
 
-pub use structs::*;
+/// Holds structs and algorithms used for the watershed portion of region analysis
+pub mod watershed;

@@ -13,6 +13,7 @@ const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
 use crate::tile_map::TileMap;
 
+/// Stores distance data for all of the tiles in a standard Screeps room.
 #[derive(Debug)]
 pub struct DistanceTransform {
     values: TileMap<u8>,
@@ -28,7 +29,7 @@ impl DistanceTransform {
     }
 
     /// This uses chebyshev distance, or chessboard distance. Tiles are connected
-    /// to their diagonals.
+    /// to their diagonals (8-connected).
     pub fn new_chebyshev(terrain: &LocalRoomTerrain) -> DistanceTransform {
         use Direction::*;
         let forward_directions = [ BottomLeft, Left, TopLeft, Top, TopRight ];
@@ -37,7 +38,7 @@ impl DistanceTransform {
     }
 
     /// Uses manhattan distance, or taxicab distance. Tiles are only connected
-    /// vertically and horizontally.
+    /// vertically and horizontally (4-connected).
     pub fn new_manhattan(terrain: &LocalRoomTerrain) -> DistanceTransform {
         use Direction::*;
         let forward_directions = [ Left, Top ];
@@ -55,14 +56,17 @@ impl DistanceTransform {
         self.values[idx]
     }
 
+    /// Get a reference to the raw `TileMap`.
     pub fn get_values(&self) -> &TileMap<u8> {
         &self.values
     }
 
+    /// Get a lookup `HashMap` that maps distances to `RoomXY` that have that distance value
     pub fn get_xy_by_distance_lookup(&self) -> &HashMap<u8, HashSet<RoomXY>> {
         &self.xy_by_distance
     }
 
+    /// Update a specific tile index to have a new value
     pub fn set(&mut self, idx: usize, val: u8) {
         let xy = linear_index_to_xy(idx);
         let oldval = self.values[xy];

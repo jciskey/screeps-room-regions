@@ -10,6 +10,7 @@ use screeps::constants::extra::ROOM_SIZE;
 // TODO: Remove once screeps-game-api > 0.21
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
+/// Maps arbitrary data onto individual room tile positions.
 #[derive(Debug, Clone)]
 pub struct TileMap<T>([T; ROOM_AREA]);
 
@@ -33,12 +34,14 @@ impl<T> Index<usize> for TileMap<T> {
     }
 }
 
+/// Allows indexing by raw linear index
 impl<T> IndexMut<usize> for TileMap<T> {
     fn index_mut(&mut self, index: usize) -> &mut T {
         &mut self.0[index]
     }
 }
 
+/// Allows indexing by RoomXY directly
 impl<T> Index<RoomXY> for TileMap<T> {
     type Output = T;
     fn index(&self, index: RoomXY) -> &T {
@@ -46,12 +49,16 @@ impl<T> Index<RoomXY> for TileMap<T> {
     }
 }
 
+/// Allows indexing by RoomXY to get a mutable copy of the associated data
 impl<T> IndexMut<RoomXY> for TileMap<T> {
     fn index_mut(&mut self, index: RoomXY) -> &mut T {
         &mut self.0[xy_to_linear_index(index)]
     }
 }
 
+/// Converts u8 data into a `LocalCostMatrix`, for convenience with
+/// community methods that will often use LocalCostMatrix for the
+/// same general data-association purposes `TileMap` gets used for
 impl From<&TileMap<u8>> for LocalCostMatrix {
     fn from(value: &TileMap<u8>) -> Self {
         let mut lcm = LocalCostMatrix::new();

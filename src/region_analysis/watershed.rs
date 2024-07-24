@@ -15,6 +15,7 @@ use screeps::{Direction, RoomXY};
 use screeps::constants::extra::ROOM_SIZE;
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
+/// Stores data from a maxima-based Meyer's Floodfill Algorithm.
 pub struct RoomRegionWatershed {
     heights: DistanceTransform,
     local_maximas: Vec<RoomXY>,
@@ -24,7 +25,7 @@ pub struct RoomRegionWatershed {
 }
 
 impl RoomRegionWatershed {
-    pub fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY]) -> Self {
+    fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY]) -> Self {
         Self {
             heights,
             local_maximas: local_maximas.to_vec(),
@@ -34,6 +35,7 @@ impl RoomRegionWatershed {
         }
     }
 
+    /// Processes baseline distance transform data into a `RoomRegionWatershed`.
     pub fn new_from_distance_transform(heights: DistanceTransform) -> Self {
         // Find local maximas from the DT using union-find
         let (maxima_iter, _) = calculate_local_maxima(&heights);
@@ -52,18 +54,24 @@ impl RoomRegionWatershed {
         }
     }
 
+    /// Gets a full clone of the heightmap
     pub fn get_heightmap_clone(&self) -> TileMap<u8> {
         self.heights.get_values().clone()
     }
 
+    /// Gets a reference to the tile color mapping
     pub fn get_color_map(&self) -> &TileMap<Color> {
         &self.color_map
     }
 
+    /// Gets a list of the local maximas across the entire room
     pub fn get_local_maximas(&self) -> &Vec<RoomXY> {
         &self.local_maximas
     }
 
+    /// Gets a list of the border tiles in the room (tiles that
+    /// are adjacent to more than 1 region, and thus are
+    /// unassigned to any region)
     pub fn get_borders(&self) -> &Vec<RoomXY> {
         &self.borders
     }
@@ -79,7 +87,7 @@ pub enum Color {
     Resolved(ColorIdx)
 }
 
-type ColorIdx = u8;
+pub type ColorIdx = u8;
 
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -263,7 +271,7 @@ fn all_room_xy_and_idx() -> impl Iterator<Item = (RoomXY, usize)> {
     .map(|idx| (linear_index_to_xy(idx), idx))
 }
 
-/// Contains information about a border between two segments.
+/// Contains information about an individual border between two regions.
 #[derive(Clone, Debug, Default)]
 pub struct SegmentBorder {
   walls: Vec<RoomXY>
@@ -275,11 +283,13 @@ impl SegmentBorder {
     self.walls.push(xy);
   }
 
+  /// The number of tiles that comprise this border segment
   #[inline]
   pub fn len(&self) -> usize {
     self.walls.len()
   }
 
+  /// Generates an iterator over the `RoomXY` tiles that comprise this border segment
   #[inline]
   pub fn walls(&self) -> impl Iterator<Item = RoomXY> + '_ {
     self.walls.iter().map(|x| *x)
@@ -287,9 +297,9 @@ impl SegmentBorder {
 }
 
 /// Data structure representing information about the borders
-/// between segments.
+/// between regions.
 ///
-/// We unique the index by ordering them.
+/// `SegmentBorder` indexes are unique because we order them before inserts into the underlying `BTreeMap`.
 #[derive(Debug)]
 pub struct SegmentBorders(BTreeMap<(ColorIdx, ColorIdx), SegmentBorder>);
 
@@ -362,6 +372,7 @@ impl SegmentBorders {
     self.0.get_mut(&idx)
   }
 
+  /// Iterates over border segments, along with the color IDs for the regions that the border separates
   #[inline]
   pub fn iter(&self) -> impl Iterator<Item = (ColorIdx, ColorIdx, &SegmentBorder)> {
     self.0.iter().map(|((a,b), border)| (*a, *b, border))
@@ -376,7 +387,7 @@ const TAXICAB_DIRECTIONS: [Direction; 4] = [
 ];
 
 #[inline]
-pub fn taxicab_adjacent(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
+fn taxicab_adjacent(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
   use Direction::*;
   TAXICAB_DIRECTIONS.into_iter()
     .filter_map(move |dir| xy.checked_add_direction(dir))

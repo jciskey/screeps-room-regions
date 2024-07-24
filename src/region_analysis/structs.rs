@@ -5,17 +5,18 @@ use screeps::linear_index_to_xy;
 
 use crate::tile_map::TileMap;
 use super::super::distance_transform::DistanceTransform;
-use super::watershed::{Color, RoomRegionWatershed, SegmentBorders};
+use super::watershed::{Color, RoomRegionWatershed, SegmentBorders, ColorIdx};
 
 use screeps::constants::extra::ROOM_SIZE;
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
+/// Top-level region analysis data for a standard Screeps room
 #[derive(Debug)]
 pub struct RoomRegionAnalysis {
     regions: HashMap<RegionLabel, RoomRegion>,
     heights: TileMap<u8>,
     borders: SegmentBorders,
-    regions_by_color_id: HashMap<u8, RegionLabel>,
+    regions_by_color_id: HashMap<ColorIdx, RegionLabel>,
 
     next_region_label_value: u8,
     next_border_region_label_value: u8,
@@ -33,6 +34,7 @@ impl RoomRegionAnalysis {
         }
     }
 
+    /// Analyzes a room for region data based on terrain data
     pub fn new_from_terrain(terrain: &LocalRoomTerrain) -> Self {
         let heights = DistanceTransform::new_chebyshev(terrain);
         let watershed = RoomRegionWatershed::new_from_distance_transform(heights);
@@ -45,7 +47,7 @@ impl RoomRegionAnalysis {
         // Get all colors, filter the borders and walls, aggregate members by region
         let mut members_by_maxima: HashMap<RoomXY, HashSet<RoomXY>> = HashMap::new();
 
-        let mut maxima_by_color_id: HashMap<u8, RoomXY> = HashMap::new();
+        let mut maxima_by_color_id: HashMap<ColorIdx, RoomXY> = HashMap::new();
 
         for xy in watershed.get_local_maximas() {
             let color = color_map[*xy];
@@ -86,7 +88,7 @@ impl RoomRegionAnalysis {
         rra_obj
     }
 
-    pub fn new_region(&mut self, members: &[RoomXY], local_maximum: RoomXY, color_id: u8) -> RegionLabel {
+    fn new_region(&mut self, members: &[RoomXY], local_maximum: RoomXY, color_id: ColorIdx) -> RegionLabel {
         let label = RegionLabel::new(self.next_region_label_value);
         self.next_region_label_value += 1;
         let region = RoomRegion::new(label, members, local_maximum, color_id);
@@ -95,36 +97,43 @@ impl RoomRegionAnalysis {
         label
     }
 
-    pub fn update_height(&mut self, height: TileMap<u8>) {
+    fn update_height(&mut self, height: TileMap<u8>) {
         self.heights = height;
     }
 
-    pub fn update_height_for_xy(&mut self, xy: &RoomXY, height: u8) {
+    fn update_height_for_xy(&mut self, xy: &RoomXY, height: u8) {
         self.heights[*xy] = height;
     }
 
+    /// Get all of the regions calculated for the room
     pub fn get_regions(&self) -> Vec<&RoomRegion> {
         self.regions.values().collect()
     }
 
+    /// Get the region for a specific `RoomXY` coordinate
     pub fn get_region_for_xy(&self, xy: RoomXY) -> Option<&RoomRegion> {
         let label_val = self.heights[xy];
         self.regions.get(&RegionLabel::new(label_val))
     }
 
-    pub fn get_region_for_color_id(&self, color_id: u8) -> Option<&RoomRegion> {
+    /// Get the region for a specific color ID
+    pub fn get_region_for_color_id(&self, color_id: ColorIdx) -> Option<&RoomRegion> {
         let label = self.regions_by_color_id.get(&color_id)?;
         self.regions.get(&label)
     }
 
+    /// Get the height for a specific `RoomXY` coordinate
     pub fn get_height_for_xy(&self, xy: &RoomXY) -> u8 {
         self.heights[*xy]
     }
 
+    /// Get a reference to the underlying region segment borders data
     pub fn get_border_segments(&self) -> &SegmentBorders {
         &self.borders
     }
 
+    /// Generates a region adjacency graph, mapping every region (identified by its
+    /// `RegionLabel`) to every adjacent region.
     pub fn get_regions_graph(&self) -> HashMap<RegionLabel, HashSet<RegionLabel>> {
         let mut graph: HashMap<RegionLabel, HashSet<RegionLabel>> = HashMap::new();
 
@@ -149,17 +158,17 @@ impl RoomRegionAnalysis {
     }
 }
 
-
+/// Stores information about a specific region
 #[derive(Debug)]
 pub struct RoomRegion {
     label: RegionLabel,
     members: HashSet<RoomXY>,
     local_maximum: RoomXY,
-    color_id: u8,
+    color_id: ColorIdx,
 }
 
 impl RoomRegion {
-    fn new(label: RegionLabel, members: &[RoomXY], local_maximum: RoomXY, color_id: u8) -> Self {
+    fn new(label: RegionLabel, members: &[RoomXY], local_maximum: RoomXY, color_id: ColorIdx) -> Self {
         Self {
             label,
             members: HashSet::from_iter(members.iter().map(|m| *m)),
@@ -168,24 +177,28 @@ impl RoomRegion {
         }
     }
 
+    /// Get the label that uniquely identifies this region within a specific room analysis
     pub fn get_label(&self) -> RegionLabel {
         self.label
     }
 
+    /// Get the `RoomXY` members that comprise this region
     pub fn get_members(&self) -> Vec<RoomXY> {
         self.members.iter().map(|m| *m).collect()
     }
 
+    /// Get the `RoomXY` tile that is the local maximum of this region
     pub fn get_local_maximum(&self) -> RoomXY {
         self.local_maximum
     }
 
-    pub fn get_color_id(&self) -> u8 {
+    /// Get the color ID that uniquely identifies this region within a specific room analysis
+    pub fn get_color_id(&self) -> ColorIdx {
         self.color_id
     }
 }
 
-
+/// Uniquely identifies a region within a specific room analysis
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct RegionLabel {
     value: u8

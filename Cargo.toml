@@ -23,6 +23,8 @@ name = "screeps_room_regions"
 all-features = true
 
 [dependencies]
+itertools = "0.13.0"
+priority-queue = "2.0.3"
 screeps-game-api = "0.21"
 
 [features]

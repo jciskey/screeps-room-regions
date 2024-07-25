@@ -165,7 +165,7 @@ mod tests {
         let mut height_map = DistanceTransform::empty();
         height_map.set(0, 8);
         height_map.set(1, 10);
-        let mut dts = DisjointTileSet::new(height_map);
+        let mut dts = DisjointTileSet::new(&height_map);
         assert_eq!(dts.maxima_and_height_for(0).1, 8);
         assert_eq!(dts.maxima_and_height_for(1).1, 10);
         assert!(!dts.same_set(0, 1));
@@ -180,7 +180,7 @@ mod tests {
         height_map.set(0, 8);
         height_map.set(1, 10);
         height_map.set(2, 12);
-        let mut dts = DisjointTileSet::new(height_map);
+        let mut dts = DisjointTileSet::new(&height_map);
         assert_eq!(dts.maxima_and_height_for(0).1, 8);
         assert_eq!(dts.maxima_and_height_for(1).1, 10);
         assert_eq!(dts.maxima_and_height_for(2).1, 12);
@@ -207,7 +207,7 @@ mod tests {
         height_map.set(100, 2);
         height_map.set(101, 3);
         height_map.set(104, 10);
-        let mut dts = DisjointTileSet::new(height_map);
+        let mut dts = DisjointTileSet::new(&height_map);
         assert_eq!(dts.maxima_and_height_for(16).1, 8);
         assert_eq!(4, dts.find(4));
         dts.union(4,5);

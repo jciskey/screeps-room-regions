@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::fmt;
 use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::super::tile_map::TileMap;
 use super::super::distance_transform::DistanceTransform;
@@ -22,16 +22,18 @@ pub struct RoomRegionWatershed {
     color_map: TileMap<Color>,
     num_colors: ColorIdx,
     borders: Vec<RoomXY>,
+    exit_region_maximas: Vec<RoomXY>,
 }
 
 impl RoomRegionWatershed {
-    fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY]) -> Self {
+    fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY], exit_region_maximas: &[RoomXY]) -> Self {
         Self {
             heights,
             local_maximas: local_maximas.to_vec(),
             color_map,
             num_colors,
             borders: borders.to_vec(),
+            exit_region_maximas: exit_region_maximas.to_vec(),
         }
     }
 
@@ -40,9 +42,14 @@ impl RoomRegionWatershed {
         // Find local maximas from the DT using union-find
         let (maxima_iter, _) = calculate_local_maxima(&heights);
         let maxima_set: HashSet<RoomXY> = maxima_iter.collect();
-        let (color_map, color_count, borders) = flood_color_map(
+
+        // Find and group the exit tiles and neighbors into disjoint groups of adjacent tiles
+        let exit_groups = calculate_exit_groups(heights.get_values());
+
+        let (color_map, color_count, borders, exit_region_maximas) = flood_color_map(
             &heights,
             &maxima_set.iter().map(|xy| *xy).collect::<Vec<RoomXY>>(),
+            exit_groups.iter().map(|v| v.as_slice()).collect::<Vec<&[RoomXY]>>().as_slice(),
         );
 
         Self {
@@ -51,6 +58,7 @@ impl RoomRegionWatershed {
             color_map,
             num_colors: color_count,
             borders,
+            exit_region_maximas: exit_region_maximas,
         }
     }
 
@@ -74,6 +82,11 @@ impl RoomRegionWatershed {
     /// unassigned to any region)
     pub fn get_borders(&self) -> &Vec<RoomXY> {
         &self.borders
+    }
+
+    /// Gets a list of the local maximas across the exit regions
+    pub fn get_exit_region_maximas(&self) -> &Vec<RoomXY> {
+        &self.exit_region_maximas
     }
 }
 
@@ -110,11 +123,13 @@ impl fmt::Display for Color {
 fn flood_color_map(
     height_map: &DistanceTransform,
     local_maximas: &[RoomXY],
-) -> (TileMap<Color>, ColorIdx, Vec<RoomXY>) {
+    exit_tile_groups: &[&[RoomXY]],
+) -> (TileMap<Color>, ColorIdx, Vec<RoomXY>, Vec<RoomXY>) {
     use priority_queue::PriorityQueue;
     let mut queue: PriorityQueue<RoomXY, u8> = PriorityQueue::new();
     let mut borders: Vec<RoomXY> = Vec::new();
     let mut color_map: TileMap<Color> = TileMap::new(Color::Empty);
+    let mut exit_region_maximas: Vec<RoomXY> = Vec::new();
 
     let mut color_count: ColorIdx = 0;
     for maxima in local_maximas {
@@ -122,6 +137,18 @@ fn flood_color_map(
         color_count += 1;
         let height = height_map.get(*maxima);
         queue.push(*maxima, height);
+    }
+
+    // Each exit tile group entry should be comprised of a region of tiles as-is;
+    // color all the tiles in the region
+    for exit_region in exit_tile_groups {
+            for xy in *exit_region {
+                color_map[*xy] = Color::Resolved(color_count);
+            }
+
+            if exit_region.len() > 0 {
+                color_count += 1;
+            }
     }
 
     while let Some((xy, height)) = queue.pop() {
@@ -183,7 +210,47 @@ fn flood_color_map(
         }
     }
 
-    (color_map, color_count, borders)
+    // Floodfill out from the exit regions to expand them into
+    // any spaces that might have gotten blocked off from other
+    // regions and are thus uncolored
+    for exit_region in exit_tile_groups {
+        if let Some(first_xy) = exit_region.first() {
+            let region_color = color_map[first_xy];
+            let mut current_maxima: RoomXY = *first_xy;
+            let mut current_maxima_height = height_map.get(*first_xy);
+            let mut queue: VecDeque<RoomXY> = VecDeque::new();
+            for xy in *exit_region {
+                queue.push_back(*xy);
+            }
+
+            while let Some(xy) = queue.pop_front() {
+                let height = height_map.get(xy);
+                if height > current_maxima_height {
+                    current_maxima = xy;
+                    current_maxima_height = height;
+                }
+
+                for n in xy.neighbors() {
+                    // Skip walls
+                    if height_map.get(n) == 0 {
+                        continue;
+                    }
+
+                    match color_map[n] {
+                        Color::Empty => {
+                            color_map[n] = region_color;
+                            queue.push_back(n);
+                        },
+                        _ => (),
+                    };
+                }
+            }
+
+            exit_region_maximas.push(current_maxima);
+        }
+    }
+
+    (color_map, color_count, borders, exit_region_maximas)
 }
 
 /// Get a list of maximas.
@@ -391,4 +458,82 @@ fn taxicab_adjacent(xy: RoomXY) -> impl Iterator<Item = RoomXY> {
   use Direction::*;
   TAXICAB_DIRECTIONS.into_iter()
     .filter_map(move |dir| xy.checked_add_direction(dir))
+}
+
+fn get_exit_tiles(dt_heights: &TileMap<u8>) -> impl Iterator<Item = RoomXY> + '_ {
+    let top_row = (0..ROOM_SIZE).map(|x| unsafe { RoomXY::unchecked_new(x, 0) });
+    let bottom_row = (0..ROOM_SIZE).map(|x| unsafe { RoomXY::unchecked_new(x, ROOM_SIZE - 1) });
+    let left_column = (0..ROOM_SIZE).map(|y| unsafe { RoomXY::unchecked_new(0, y) });
+    let right_column = (0..ROOM_SIZE).map(|y| unsafe { RoomXY::unchecked_new(ROOM_SIZE - 1, y) });
+
+    top_row.chain(right_column).chain(bottom_row).chain(left_column)
+        .filter(|xy| dt_heights[*xy] != 0)
+}
+
+/// Returns a list of RoomXY tile groups, each group representing adjacent exit
+/// tiles and their immediately-adjacent neighbors. Exit tiles that are not
+/// adjacent but do share an immediate non-wall neighbor will be in the same group.
+fn calculate_exit_groups(dt_heights: &TileMap<u8>) -> Vec<Vec<RoomXY>> {
+    let mut group_tilemap: TileMap<u8> = TileMap::new(0);
+    let mut current_group_id: u8 = 0;
+    let mut first_group_id_opt: Option<u8> = None;
+    let mut group_members: HashMap<u8, HashSet<RoomXY>> = HashMap::new();
+
+    // Iterate through exit tiles to group them into explicit regions of their own
+    // -- Gather their neighbors, determine if they need to be grouped together;
+    //    if it's a non-wall neighbor of an exit tile, it gets added to the group;
+    for exit_xy in get_exit_tiles(dt_heights) {
+        let mut current_group_members = group_members.entry(current_group_id).or_insert(HashSet::new());
+        let neighbors: Vec<_> = exit_xy.neighbors().iter()
+            .filter(|xy: &&RoomXY| dt_heights[**xy] != 0)
+            .map(|xy| *xy)
+            .collect();
+        let has_neighbor_in_current_group = neighbors.iter()
+            .any(|xy: &RoomXY| current_group_members.contains(xy));
+
+        let mut member_set = if has_neighbor_in_current_group {
+            current_group_members
+        } else {
+            current_group_id += 1;
+            group_members.entry(current_group_id).or_insert(HashSet::new())
+        };
+
+        if first_group_id_opt.is_none() {
+            first_group_id_opt = Some(current_group_id);
+        }
+
+        member_set.insert(exit_xy);
+        for xy in neighbors {
+            member_set.insert(xy);
+        }
+    }
+
+    // Check the final group against the first group, to determine if they're adjacent; if so, merge them
+    if let Some(first_group_id) = first_group_id_opt {
+        if first_group_id != current_group_id {
+            let mut needs_merge = false;
+
+            if let Some(first_group) = group_members.get(&first_group_id) {
+                if let Some(current_group_members) = group_members.get(&current_group_id) {
+                    if !current_group_members.is_disjoint(first_group) {
+                        needs_merge = true;
+                    }
+                }
+            }
+
+            if needs_merge {
+                let current_group_members_opt = group_members.remove(&current_group_id);
+                if let Some(current_group_members) = current_group_members_opt {
+                    if let Some(first_group) = group_members.get_mut(&first_group_id) {
+                        for xy in current_group_members.iter() {
+                            first_group.insert(*xy);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Convert the group membership sets into an appropriate vector for consumption by users
+    group_members.into_values().map(|s| s.iter().map(|xy| *xy).collect()).collect()
 }

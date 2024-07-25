@@ -56,6 +56,21 @@ impl<T> IndexMut<RoomXY> for TileMap<T> {
     }
 }
 
+/// Allows indexing by RoomXY references
+impl<T> Index<&RoomXY> for TileMap<T> {
+    type Output = T;
+    fn index(&self, index: &RoomXY) -> &T {
+        &self.0[xy_to_linear_index(*index)]
+    }
+}
+
+/// Allows indexing by RoomXY references to get a mutable copy of the associated data
+impl<T> IndexMut<&RoomXY> for TileMap<T> {
+    fn index_mut(&mut self, index: &RoomXY) -> &mut T {
+        &mut self.0[xy_to_linear_index(*index)]
+    }
+}
+
 /// Converts u8 data into a `LocalCostMatrix`, for convenience with
 /// community methods that will often use LocalCostMatrix for the
 /// same general data-association purposes `TileMap` gets used for

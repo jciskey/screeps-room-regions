@@ -16,6 +16,7 @@ pub struct RoomRegionAnalysis {
     regions: HashMap<RegionLabel, RoomRegion>,
     heights: TileMap<u8>,
     borders: SegmentBorders,
+    border_tiles: Vec<RoomXY>,
     regions_by_color_id: HashMap<ColorIdx, RegionLabel>,
 
     next_region_label_value: u8,
@@ -23,11 +24,12 @@ pub struct RoomRegionAnalysis {
 }
 
 impl RoomRegionAnalysis {
-    fn new(borders: SegmentBorders) -> Self {
+    fn new(borders: SegmentBorders, border_tiles: &[RoomXY]) -> Self {
         Self {
             regions: HashMap::new(),
             heights: TileMap::new(0),
             borders,
+            border_tiles: border_tiles.to_vec(),
             regions_by_color_id: HashMap::new(),
             next_region_label_value: 1,
             next_border_region_label_value: 1,
@@ -40,7 +42,7 @@ impl RoomRegionAnalysis {
         let watershed = RoomRegionWatershed::new_from_distance_transform(heights);
         let color_map = watershed.get_color_map();
         let borders = watershed.get_borders();
-        let mut rra_obj = RoomRegionAnalysis::new(SegmentBorders::new(&color_map, &borders));
+        let mut rra_obj = RoomRegionAnalysis::new(SegmentBorders::new(&color_map, &borders), borders);
 
         rra_obj.update_height(watershed.get_heightmap_clone());
 
@@ -49,7 +51,8 @@ impl RoomRegionAnalysis {
 
         let mut maxima_by_color_id: HashMap<ColorIdx, RoomXY> = HashMap::new();
 
-        for xy in watershed.get_local_maximas() {
+        let all_maximas = watershed.get_local_maximas().iter().chain(watershed.get_exit_region_maximas());
+        for xy in all_maximas {
             let color = color_map[*xy];
             if let Color::Resolved(color_id) = color {
                 maxima_by_color_id.insert(color_id, *xy);
@@ -59,7 +62,7 @@ impl RoomRegionAnalysis {
 
         for (xy, idx) in all_room_xy_and_idx() {
             // Skip walls
-            if rra_obj.get_height_for_xy(&xy) == u8::MAX {
+            if rra_obj.get_height_for_xy(&xy) == 0 {
                 continue;
             }
 
@@ -130,6 +133,11 @@ impl RoomRegionAnalysis {
     /// Get a reference to the underlying region segment borders data
     pub fn get_border_segments(&self) -> &SegmentBorders {
         &self.borders
+    }
+
+    /// Get a reference to the underlying list of border tiles
+    pub fn get_border_tiles(&self) -> &Vec<RoomXY> {
+        &self.border_tiles
     }
 
     /// Generates a region adjacency graph, mapping every region (identified by its

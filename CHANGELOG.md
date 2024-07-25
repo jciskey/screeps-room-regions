@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - Add distinct exit regions to watershed process
 - Expose direct border tiles in `RoomRegionAnalysis` via `get_border_tiles` function

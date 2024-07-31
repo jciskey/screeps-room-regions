@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::fmt;
 use std::collections::BTreeMap;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque, BinaryHeap};
 
 use super::super::tile_map::TileMap;
 use super::super::distance_transform::DistanceTransform;
@@ -113,6 +113,37 @@ impl fmt::Display for Color {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct FloodQueueItem {
+  xy: RoomXY,
+  height: u8
+}
+
+use std::fmt::{Debug, Formatter};
+impl Debug for FloodQueueItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {}: {})", self.xy.x, self.xy.y, self.height)
+    }
+}
+
+impl FloodQueueItem {
+  fn new(xy: RoomXY, height: u8) -> FloodQueueItem {
+    FloodQueueItem { xy, height }
+  }
+}
+
+impl Ord for FloodQueueItem {
+  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    self.height.cmp(&other.height)
+        .then_with(|| self.xy.cmp(&other.xy))
+  }
+}
+
+impl PartialOrd for FloodQueueItem {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    Some(self.cmp(other))
+  }
+}
 
 /// Flood a color map, avoiding coloring a cell when it would cause
 /// diagonals or adjacents of one color to touch another color.
@@ -125,25 +156,24 @@ fn flood_color_map(
     local_maximas: &[RoomXY],
     exit_tile_groups: &[&[RoomXY]],
 ) -> (TileMap<Color>, ColorIdx, Vec<RoomXY>, Vec<RoomXY>) {
-    use priority_queue::PriorityQueue;
-    let mut queue: PriorityQueue<RoomXY, u8> = PriorityQueue::new();
+    let mut pqueue: BinaryHeap<FloodQueueItem> = BinaryHeap::new();
     let mut borders: Vec<RoomXY> = Vec::new();
     let mut color_map: TileMap<Color> = TileMap::new(Color::Empty);
     let mut exit_region_maximas: Vec<RoomXY> = Vec::new();
 
     let mut color_count: ColorIdx = 0;
-    for maxima in local_maximas {
-        color_map[*maxima] = Color::Resolved(color_count);
+    for &maxima in local_maximas {
+        color_map[maxima] = Color::Resolved(color_count);
         color_count += 1;
-        let height = height_map.get(*maxima);
-        queue.push(*maxima, height);
+        let height = height_map.get(maxima);
+        pqueue.push(FloodQueueItem::new(maxima, height));
     }
 
     // Each exit tile group entry should be comprised of a region of tiles as-is;
     // color all the tiles in the region
     for exit_region in exit_tile_groups {
-            for xy in *exit_region {
-                color_map[*xy] = Color::Resolved(color_count);
+            for &xy in *exit_region {
+                color_map[xy] = Color::Resolved(color_count);
             }
 
             if exit_region.len() > 0 {
@@ -151,7 +181,7 @@ fn flood_color_map(
             }
     }
 
-    while let Some((xy, height)) = queue.pop() {
+    while let Some(FloodQueueItem {xy, height}) = pqueue.pop() {
         let xy_color = color_map[xy];
         let xy_height = height_map.get(xy);
         // The maxima are the only points that should have a color when
@@ -201,7 +231,7 @@ fn flood_color_map(
                     let adj_height = height_map.get(adj);
 
                     color_map[adj] = Color::Pending(xy_color_idx);
-                    queue.push(adj, adj_height);
+                    pqueue.push(FloodQueueItem::new(adj, adj_height));
                 }
                 _ => {
                     continue
@@ -536,4 +566,30 @@ fn calculate_exit_groups(dt_heights: &TileMap<u8>) -> Vec<Vec<RoomXY>> {
 
     // Convert the group membership sets into an appropriate vector for consumption by users
     group_members.into_values().map(|s| s.iter().map(|xy| *xy).collect()).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flood_queue_item() {
+        fn item(x: u8, y: u8, height: u8) -> FloodQueueItem {
+            FloodQueueItem {
+                xy: RoomXY::try_from((x,y)).unwrap(),
+                height
+            }
+        }
+        let mut heap = BinaryHeap::from([
+            item(23,0,9),
+            item(24,0,8),
+            item(24,10,20),
+            item(24,5,5),
+        ]);
+        assert_eq!(heap.pop(), Some(item(24,10,20)));
+        assert_eq!(heap.pop(), Some(item(23,0,9)));
+        assert_eq!(heap.pop(), Some(item(24,0,8)));
+        assert_eq!(heap.pop(), Some(item(24,5,5)));
+        assert_eq!(heap.pop(), None);
+    }
 }

@@ -1,3 +1,16 @@
+//! Room region analysis structures and algorithms for Screeps: World.
+//!
+//! # Cargo Features
+//!
+//! ## `petgraph`
+//!
+//! Enables conversion of region analysis data into graph structures that can
+//! be operated on using [petgraph](https://docs.rs/petgraph/)-defined algorithms.
+
+// to build locally with doc_cfg enabled, run:
+// `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features`
+#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg))]
+#![feature(doc_cfg)]
 
 /// Used for calculating the standard distance transforms of tiles from walls
 pub mod distance_transform;

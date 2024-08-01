@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Remove `priority_queue` dependency in favor of `std::collections::BinaryTree`
+- Bugfix for region lookup by `RoomXY`
+- Add border tile region adjacency information
+- Add region border tile adjacency information
+
 ## 0.1.3
 
 - Add distinct exit regions to watershed process

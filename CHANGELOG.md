@@ -6,6 +6,7 @@
 - Bugfix for region lookup by `RoomXY`
 - Add border tile region adjacency information
 - Add region border tile adjacency information
+- Bugfix for border tile region maxima placement
 
 ## 0.1.3
 

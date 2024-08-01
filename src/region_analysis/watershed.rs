@@ -42,12 +42,26 @@ impl RoomRegionWatershed {
 
     /// Processes baseline distance transform data into a `RoomRegionWatershed`.
     pub fn new_from_distance_transform(heights: DistanceTransform) -> Self {
-        // Find local maximas from the DT using union-find
-        let (maxima_iter, _) = calculate_local_maxima(&heights);
-        let maxima_set: HashSet<RoomXY> = maxima_iter.collect();
-
         // Find and group the exit tiles and neighbors into disjoint groups of adjacent tiles
         let exit_groups = calculate_exit_groups(heights.get_values());
+        let exit_groups_members: Vec<RoomXY> = exit_groups.iter().flat_map(|v| v.iter()).map(|xy| *xy).collect();
+
+        let mut excluded_tiles: HashSet<RoomXY> = HashSet::new();
+
+        // We want to exclude all exit region tiles and their immediate neighbors from the local maxima finding process
+        for xy in exit_groups_members {
+            excluded_tiles.insert(xy);
+            xy.neighbors().iter()
+                .filter(|n| heights.get(**n) != 0)
+                .for_each(|n| {
+                    excluded_tiles.insert(*n);
+                });
+        }
+
+        // Find local maximas from the DT using union-find
+        let (maxima_iter, _) = calculate_local_maxima(&heights, &excluded_tiles);
+        let maxima_set_raw: HashSet<RoomXY> = maxima_iter.collect();
+        let maxima_set: HashSet<RoomXY> = maxima_set_raw.into_iter().filter(|xy| !excluded_tiles.contains(xy)).collect();
 
         let (color_map, color_count, borders, exit_region_maximas) = flood_color_map(
             &heights,
@@ -296,9 +310,10 @@ fn flood_color_map(
 /// Creates a list of local maxima and a [`DisjointTileSet`]
 /// of how it was found. This is not good segmentation, but
 /// is useful for debugging.
-fn calculate_local_maxima(
-    height_map: &DistanceTransform
-) -> (impl Iterator<Item = RoomXY>, DisjointTileSet) {
+fn calculate_local_maxima<'a>(
+    height_map: &'a DistanceTransform,
+    excluded_tiles: &HashSet<RoomXY>,
+) -> (impl Iterator<Item = RoomXY>, DisjointTileSet<'a>) {
     let mut dts = DisjointTileSet::new(height_map);
 
     for (xy, idx) in all_room_xy_and_idx() {
@@ -310,7 +325,7 @@ fn calculate_local_maxima(
         if !dts.is_singleton(idx as u16) {
             continue
         }
-        link_to_maxima(xy, height_map, &mut dts);
+        link_to_maxima(xy, height_map, &mut dts, excluded_tiles);
     }
 
     let mut maxima_map: BTreeMap<u16, RoomXY> = BTreeMap::new();
@@ -334,17 +349,19 @@ fn link_to_maxima(
     xy: RoomXY,
     height_map: &DistanceTransform,
     dts: &mut DisjointTileSet,
+    excluded_tiles: &HashSet<RoomXY>,
 ) -> bool {
     let height = height_map.get(xy);
 
     if let Some(higher) = xy.neighbors()
         .iter()
+        .filter(|adj| !excluded_tiles.contains(*adj))
         .find(|adj| height_map.get(**adj) > height)
     {
         let was_single = dts.is_singleton_xy(*higher);
         dts.union_xy(*higher, xy);
         if was_single {
-            link_to_maxima(*higher, height_map, dts);
+            link_to_maxima(*higher, height_map, dts, excluded_tiles);
         }
         return true;
     }
@@ -362,7 +379,7 @@ fn link_to_maxima(
             }
         } else {
             dts.union_xy(equal, xy);
-            if link_to_maxima(equal, height_map, dts) {
+            if link_to_maxima(equal, height_map, dts, excluded_tiles) {
                 return true
             }
         }

@@ -28,7 +28,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 itertools = "0.13.0"
 petgraph = { version = "0.6.5", optional = true }
-priority-queue = "2.0.3"
 screeps-game-api = "0.21"
 
 [features]

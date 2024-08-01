@@ -118,8 +118,6 @@ impl RoomRegionAnalysis {
         let mut regions_to_connect: HashSet<(RegionLabel, RegionLabel)> = HashSet::new();
         let mut border_region_adjacencies: Vec<(RoomXY, HashSet<RegionLabel>)> = Vec::new();
 
-        let mut debug_seen_region_labels: HashSet<RegionLabel> = HashSet::new();
-
         for border_xy in rra_obj.get_border_tiles() {
             let adjacent_regions: Vec<RegionLabel> = border_xy.neighbors().iter()
                 .filter(|xy| terrain.get_xy(**xy) != Terrain::Wall)
@@ -132,7 +130,6 @@ impl RoomRegionAnalysis {
             let mut entry: HashSet<RegionLabel> = HashSet::new();
             for label in &adjacent_regions {
                 entry.insert(*label);
-                debug_seen_region_labels.insert(*label);
             }
 
             border_region_adjacencies.push((*border_xy, entry));

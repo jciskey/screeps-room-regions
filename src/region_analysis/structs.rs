@@ -1,7 +1,12 @@
 
+use std::fmt;
+
 use std::collections::{HashMap, HashSet};
-use screeps::{RoomXY, LocalCostMatrix, LocalRoomTerrain};
+use screeps::{RoomXY, LocalCostMatrix, LocalRoomTerrain, Terrain};
 use screeps::linear_index_to_xy;
+
+use std::iter;
+use itertools::Itertools;
 
 use crate::tile_map::TileMap;
 use super::super::distance_transform::DistanceTransform;
@@ -9,6 +14,9 @@ use super::watershed::{Color, RoomRegionWatershed, SegmentBorders, ColorIdx};
 
 use screeps::constants::extra::ROOM_SIZE;
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
+
+#[cfg(feature = "petgraph")]
+use petgraph::prelude::UnGraphMap;
 
 /// Top-level region analysis data for a standard Screeps room
 #[derive(Debug)]
@@ -18,6 +26,7 @@ pub struct RoomRegionAnalysis {
     borders: SegmentBorders,
     border_tiles: Vec<RoomXY>,
     regions_by_color_id: HashMap<ColorIdx, RegionLabel>,
+    region_neighbors: HashMap<RegionLabel, HashSet<RegionLabel>>,
 
     next_region_label_value: u8,
     next_border_region_label_value: u8,
@@ -31,6 +40,7 @@ impl RoomRegionAnalysis {
             borders,
             border_tiles: border_tiles.to_vec(),
             regions_by_color_id: HashMap::new(),
+            region_neighbors: HashMap::new(),
             next_region_label_value: 1,
             next_border_region_label_value: 1,
         }
@@ -88,6 +98,28 @@ impl RoomRegionAnalysis {
             }
         }
 
+        let mut regions_to_connect: Vec<(RegionLabel, RegionLabel)> = Vec::new();
+
+        for border_xy in rra_obj.get_border_tiles() {
+            let adjacent_region_pairs: Vec<(ColorIdx, ColorIdx)> = border_xy.neighbors().iter()
+                .filter(|xy| terrain.get_xy(**xy) != Terrain::Wall)
+                .filter_map(|xy| if let Color::Resolved(color_id) = color_map[xy] { Some(color_id) } else { None })
+                .unique()
+                .combinations(2)
+                .map(|v| (v[0], v[1]))
+                .collect();
+
+            for (a, b) in adjacent_region_pairs {
+                let label_a = rra_obj.get_region_for_color_id(a).expect("expected a region").get_label();
+                let label_b = rra_obj.get_region_for_color_id(b).expect("expected a region").get_label();
+                regions_to_connect.push((label_a, label_b));
+            }
+        }
+
+        for (a, b) in regions_to_connect {
+            rra_obj.connect_regions(a, b);
+        }
+
         rra_obj
     }
 
@@ -106,6 +138,11 @@ impl RoomRegionAnalysis {
 
     fn update_height_for_xy(&mut self, xy: &RoomXY, height: u8) {
         self.heights[*xy] = height;
+    }
+
+    fn connect_regions(&mut self, a: RegionLabel, b: RegionLabel) {
+        self.region_neighbors.entry(a).or_insert_with(|| HashSet::new()).insert(b);
+        self.region_neighbors.entry(b).or_insert_with(|| HashSet::new()).insert(a);
     }
 
     /// Get all of the regions calculated for the room
@@ -142,23 +179,41 @@ impl RoomRegionAnalysis {
 
     /// Generates a region adjacency graph, mapping every region (identified by its
     /// `RegionLabel`) to every adjacent region.
-    pub fn get_regions_graph(&self) -> HashMap<RegionLabel, HashSet<RegionLabel>> {
-        let mut graph: HashMap<RegionLabel, HashSet<RegionLabel>> = HashMap::new();
+    pub fn get_regions_graph_as_hashmap(&self) -> &HashMap<RegionLabel, HashSet<RegionLabel>> {
+        // let mut graph: HashMap<RegionLabel, HashSet<RegionLabel>> = HashMap::new();
 
-        for label in self.regions.keys() {
-            graph.insert(*label, HashSet::new());
-        }
+        // for label in self.regions.keys() {
+        //     graph.insert(*label, HashSet::new());
+        // }
 
-        for (color_a, color_b, _) in self.borders.iter() {
-            if let Some(label_a) = self.regions_by_color_id.get(&color_a) {
-                if let Some(label_b) = self.regions_by_color_id.get(&color_b) {
-                    if let Some(mut edges_a) = graph.get_mut(label_a) {
-                        edges_a.insert(*label_b);
-                    }
-                    if let Some(mut edges_b) = graph.get_mut(label_b) {
-                        edges_b.insert(*label_a);
-                    }
-                }
+        // for (color_a, color_b, _) in self.borders.iter() {
+        //     if let Some(label_a) = self.regions_by_color_id.get(&color_a) {
+        //         if let Some(label_b) = self.regions_by_color_id.get(&color_b) {
+        //             if let Some(mut edges_a) = graph.get_mut(label_a) {
+        //                 edges_a.insert(*label_b);
+        //             }
+        //             if let Some(mut edges_b) = graph.get_mut(label_b) {
+        //                 edges_b.insert(*label_a);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // graph
+
+        &self.region_neighbors
+    }
+
+    /// Generates an undirected graph of the regions.
+    #[cfg(any(feature = "petgraph", doc))]
+    #[doc(cfg(feature = "petgraph"))]
+    pub fn get_regions_graph_as_graphmap(&self) -> UnGraphMap<RegionLabel, u8> {
+        let num_regions = self.regions.len();
+        let mut graph = UnGraphMap::with_capacity(num_regions, num_regions);
+
+        for (label, neighbors) in &self.region_neighbors {
+            for (a, b) in iter::once(label).cartesian_product(neighbors.iter()) {
+                graph.add_edge(*a, *b, 1);
             }
         }
 
@@ -207,7 +262,7 @@ impl RoomRegion {
 }
 
 /// Uniquely identifies a region within a specific room analysis
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct RegionLabel {
     value: u8
 }
@@ -225,6 +280,12 @@ impl From<u8> for RegionLabel {
         Self {
             value
         }
+    }
+}
+
+impl fmt::Display for RegionLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value.to_string())
     }
 }
 

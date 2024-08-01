@@ -21,6 +21,9 @@ name = "screeps_room_regions"
 
 [package.metadata.docs.rs]
 all-features = true
+# this workaround (and the cfg_attr wrapping around the feature(doc_auto_cfg) call)
+# can go once the doc_auto_cfg feature is stablized
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 itertools = "0.13.0"

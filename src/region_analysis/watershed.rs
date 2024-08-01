@@ -16,6 +16,7 @@ use screeps::constants::extra::ROOM_SIZE;
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
 /// Stores data from a maxima-based Meyer's Floodfill Algorithm.
+#[derive(Debug)]
 pub struct RoomRegionWatershed {
     heights: DistanceTransform,
     local_maximas: Vec<RoomXY>,
@@ -23,10 +24,11 @@ pub struct RoomRegionWatershed {
     num_colors: ColorIdx,
     borders: Vec<RoomXY>,
     exit_region_maximas: Vec<RoomXY>,
+    exit_region_groups: Vec<Vec<RoomXY>>,
 }
 
 impl RoomRegionWatershed {
-    fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY], exit_region_maximas: &[RoomXY]) -> Self {
+    fn new(heights: DistanceTransform, local_maximas: &[RoomXY], color_map: TileMap<Color>, num_colors: ColorIdx, borders: &[RoomXY], exit_region_maximas: &[RoomXY], exit_region_groups: Vec<Vec<RoomXY>>) -> Self {
         Self {
             heights,
             local_maximas: local_maximas.to_vec(),
@@ -34,6 +36,7 @@ impl RoomRegionWatershed {
             num_colors,
             borders: borders.to_vec(),
             exit_region_maximas: exit_region_maximas.to_vec(),
+            exit_region_groups: exit_region_groups,
         }
     }
 
@@ -59,6 +62,7 @@ impl RoomRegionWatershed {
             num_colors: color_count,
             borders,
             exit_region_maximas: exit_region_maximas,
+            exit_region_groups: exit_groups,
         }
     }
 
@@ -87,6 +91,10 @@ impl RoomRegionWatershed {
     /// Gets a list of the local maximas across the exit regions
     pub fn get_exit_region_maximas(&self) -> &Vec<RoomXY> {
         &self.exit_region_maximas
+    }
+
+    pub fn get_exit_region_groups(&self) -> &Vec<Vec<RoomXY>> {
+        &self.exit_region_groups
     }
 }
 
